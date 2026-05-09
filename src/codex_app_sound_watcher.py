@@ -15,12 +15,10 @@ LOG_PATH = NOTIFICATIONS_DIR / "codex_app_sound_watcher.log"
 ENABLED_PATH = NOTIFICATIONS_DIR / "alerts_enabled"
 
 SOUNDS = {
-    "start": "/System/Library/Sounds/Tink.aiff",
     "end": "/System/Library/Sounds/Glass.aiff",
     "permission": "/System/Library/Sounds/Basso.aiff",
 }
 
-END_REPEAT_SECONDS = 15
 PERMISSION_REPEAT_SECONDS = 5
 MAX_REPEAT_SECONDS = 120
 POLL_SECONDS = 1.0
@@ -28,12 +26,9 @@ SESSION_RESCAN_SECONDS = 5.0
 
 state_lock = threading.Lock()
 state = {
-    "end_loop": False,
     "permission_loop": False,
-    "end_loop_started_at": 0.0,
     "permission_loop_started_at": 0.0,
     "pending_permissions": set(),
-    "last_start_sound_at": 0.0,
 }
 
 
@@ -91,40 +86,24 @@ def repeat_loop(flag_name, sound_key, interval):
 
 def stop_waiting_loops():
     with state_lock:
-        state["end_loop"] = False
         state["permission_loop"] = False
-        state["end_loop_started_at"] = 0.0
         state["permission_loop_started_at"] = 0.0
         state["pending_permissions"].clear()
 
 
-def play_start_once():
+def handle_start():
     if not alerts_enabled():
         stop_waiting_loops()
-        return False
-
-    now = time.time()
-    with state_lock:
-        if now - state["last_start_sound_at"] < 2:
-            return False
-        state["last_start_sound_at"] = now
-
-    play("start")
-    return True
+    else:
+        stop_waiting_loops()
 
 
-def start_end_loop():
+def play_end_once():
     if not alerts_enabled():
         stop_waiting_loops()
         return
 
-    with state_lock:
-        state["end_loop"] = True
-        state["end_loop_started_at"] = time.monotonic()
-        state["permission_loop"] = False
-        state["permission_loop_started_at"] = 0.0
-        state["pending_permissions"].clear()
-
+    stop_waiting_loops()
     play("end")
 
 
@@ -134,8 +113,6 @@ def start_permission_loop(call_id=None):
         return
 
     with state_lock:
-        state["end_loop"] = False
-        state["end_loop_started_at"] = 0.0
         state["permission_loop"] = True
         if not state["permission_loop_started_at"]:
             state["permission_loop_started_at"] = time.monotonic()
@@ -203,13 +180,12 @@ def handle_event(event):
         return
 
     if event_type == "event_msg" and payload_type in {"task_started", "user_message"}:
-        stop_waiting_loops()
-        if play_start_once():
-            log(f"start event: {payload_type}")
+        handle_start()
+        log(f"start event: {payload_type}")
         return
 
     if event_type == "event_msg" and payload_type == "task_complete":
-        start_end_loop()
+        play_end_once()
         log("end event: task_complete")
         return
 
@@ -268,11 +244,6 @@ def main():
                 pass
         save_offsets(offsets)
 
-    threading.Thread(
-        target=repeat_loop,
-        args=("end_loop", "end", END_REPEAT_SECONDS),
-        daemon=True,
-    ).start()
     threading.Thread(
         target=repeat_loop,
         args=("permission_loop", "permission", PERMISSION_REPEAT_SECONDS),
