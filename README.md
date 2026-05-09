@@ -5,8 +5,8 @@ Mac menu bar toggle and sound alerts for the Codex Desktop app.
 This project adds local-only alert sounds for Codex Desktop events:
 
 - prompt starts
-- prompt ends, repeating every 15 seconds until the next prompt starts
-- permission or user-action prompts, repeating every 5 seconds until resolved
+- prompt ends, repeating every 15 seconds until the next prompt starts or 2 minutes pass
+- permission or user-action prompts, repeating every 5 seconds until resolved or 2 minutes pass
 - a menu bar toggle that appears only while Codex is running
 
 The installer is portable and does not contain user-specific paths. It installs into the current user's home directory.
@@ -72,6 +72,7 @@ Edit these constants in `src/codex_app_sound_watcher.py` before reinstalling:
 ```py
 END_REPEAT_SECONDS = 15
 PERMISSION_REPEAT_SECONDS = 5
+MAX_REPEAT_SECONDS = 120
 ```
 
 Default sounds:
@@ -106,6 +107,7 @@ Performance behavior:
 - the watcher scans for new session files every 5 seconds
 - active session files are checked once per second
 - state is written only when new Codex events are seen
+- repeating alerts stop automatically after 2 minutes
 
 Typical idle usage should be near `0.0%` CPU. The watcher uses a small Python process, and the menu bar helper is a small AppKit process.
 

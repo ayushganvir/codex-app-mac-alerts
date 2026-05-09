@@ -22,6 +22,7 @@ SOUNDS = {
 
 END_REPEAT_SECONDS = 15
 PERMISSION_REPEAT_SECONDS = 5
+MAX_REPEAT_SECONDS = 120
 POLL_SECONDS = 1.0
 SESSION_RESCAN_SECONDS = 5.0
 
@@ -29,6 +30,8 @@ state_lock = threading.Lock()
 state = {
     "end_loop": False,
     "permission_loop": False,
+    "end_loop_started_at": 0.0,
+    "permission_loop_started_at": 0.0,
     "pending_permissions": set(),
     "last_start_sound_at": 0.0,
 }
@@ -66,11 +69,19 @@ def play(sound_key):
 
 
 def repeat_loop(flag_name, sound_key, interval):
+    started_at_key = f"{flag_name}_started_at"
     while True:
         with state_lock:
             enabled = state[flag_name]
+            started_at = state[started_at_key]
 
-        if enabled and alerts_enabled():
+        if enabled and time.monotonic() - started_at >= MAX_REPEAT_SECONDS:
+            with state_lock:
+                state[flag_name] = False
+                if flag_name == "permission_loop":
+                    state["pending_permissions"].clear()
+            log(f"{flag_name} stopped after {MAX_REPEAT_SECONDS} seconds")
+        elif enabled and alerts_enabled():
             play(sound_key)
         elif enabled:
             stop_waiting_loops()
@@ -82,6 +93,8 @@ def stop_waiting_loops():
     with state_lock:
         state["end_loop"] = False
         state["permission_loop"] = False
+        state["end_loop_started_at"] = 0.0
+        state["permission_loop_started_at"] = 0.0
         state["pending_permissions"].clear()
 
 
@@ -107,7 +120,9 @@ def start_end_loop():
 
     with state_lock:
         state["end_loop"] = True
+        state["end_loop_started_at"] = time.monotonic()
         state["permission_loop"] = False
+        state["permission_loop_started_at"] = 0.0
         state["pending_permissions"].clear()
 
     play("end")
@@ -120,7 +135,10 @@ def start_permission_loop(call_id=None):
 
     with state_lock:
         state["end_loop"] = False
+        state["end_loop_started_at"] = 0.0
         state["permission_loop"] = True
+        if not state["permission_loop_started_at"]:
+            state["permission_loop_started_at"] = time.monotonic()
         if call_id:
             state["pending_permissions"].add(call_id)
 
@@ -133,6 +151,7 @@ def resolve_permission(call_id=None):
             state["pending_permissions"].discard(call_id)
         if not state["pending_permissions"]:
             state["permission_loop"] = False
+            state["permission_loop_started_at"] = 0.0
 
 
 def latest_session_files(limit=20):
